@@ -34,6 +34,24 @@
 #   - Row z-score scaling is applied for heatmap display.
 #   - Z-scores are capped at -2 and 2.
 #
+# Package/method references:
+#   - readr::read_tsv:
+#     https://readr.tidyverse.org/reference/read_delim.html
+#   - dplyr data manipulation:
+#     https://dplyr.tidyverse.org/
+#   - tidyr data reshaping:
+#     https://tidyr.tidyverse.org/
+#   - ggplot2 figure generation:
+#     https://ggplot2.tidyverse.org/
+#   - svglite SVG export:
+#     https://svglite.r-lib.org/
+#   - ComplexHeatmap heatmap visualisation:
+#     https://bioconductor.org/packages/release/bioc/html/ComplexHeatmap.html
+#   - circlize colour mapping:
+#     https://cran.r-project.org/package=circlize
+#   - row z-score scaling:
+#     https://stat.ethz.ch/R-manual/R-devel/library/base/html/scale.html
+#
 # Output files:
 #   - Figure_2C_candidate_heatmap_EGS_increased.png
 #   - Figure_2C_candidate_heatmap_EGS_increased.pdf
