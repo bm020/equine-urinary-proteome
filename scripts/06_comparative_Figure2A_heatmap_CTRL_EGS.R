@@ -31,6 +31,24 @@
 #   - Apply row z-score scaling for heatmap display.
 #   - Clamp z-scores to the range -2 to 2.
 #
+# Package/method references:
+#   - readr::read_tsv:
+#     https://readr.tidyverse.org/reference/read_delim.html
+#   - dplyr data manipulation:
+#     https://dplyr.tidyverse.org/
+#   - tidyr data reshaping:
+#     https://tidyr.tidyverse.org/
+#   - ggplot2 figure generation:
+#     https://ggplot2.tidyverse.org/
+#   - svglite SVG export:
+#     https://svglite.r-lib.org/
+#   - pheatmap heatmap visualisation:
+#     https://cran.r-project.org/package=pheatmap
+#   - viridis colour scales:
+#     https://cran.r-project.org/package=viridis
+#   - row z-score scaling:
+#     https://stat.ethz.ch/R-manual/R-devel/library/base/html/scale.html
+#
 # Output files:
 #   - Figure_2A_heatmap_CTRL_EGS.png
 #   - Figure_2A_heatmap_CTRL_EGS.pdf
