@@ -24,6 +24,20 @@
 # Retained samples:
 #   CTRL1, CTRL2, CTRL3, CTRL4, CTRL5, EGS1, EGS2, EGS3
 #
+# Package/method references:
+#   - readr::read_tsv:
+#     https://readr.tidyverse.org/reference/read_delim.html
+#   - dplyr data manipulation:
+#     https://dplyr.tidyverse.org/
+#   - tidyr data reshaping:
+#     https://tidyr.tidyverse.org/
+#   - ggplot2 figure generation:
+#     https://ggplot2.tidyverse.org/
+#   - svglite SVG export:
+#     https://svglite.r-lib.org/
+#   - UpSetR set intersection visualisation:
+#     https://cran.r-project.org/package=UpSetR
+#
 # Output files:
 #   - Figure_2B_upset_protein_overlap_CTRL_EGS.png
 #   - Figure_2B_upset_protein_overlap_CTRL_EGS.pdf
