@@ -803,3 +803,830 @@ cat("\nSaved:\n")
 cat("- Supplementary_Figure_S1A_protein_detection_per_sample.png/.svg/.pdf\n")
 cat("- Supplementary_Figure_S1B_protein_identifications_by_group.png/.svg/.pdf\n")
 cat("- Supplementary_Figure_S1C_QC_PCA_urine_protein_intensity.png/.svg/.pdf\n")
+#
+#
+#
+#
+# ============================================================
+# Supplementary Figure S5
+# Overlap between reviewed Swiss-Prot, Equine Protein Atlas
+# and the equine urine proteome
+# ============================================================
+#
+#
+library(readr)
+library(dplyr)
+library(tidyr)
+library(stringr)
+library(ggplot2)
+library(tibble)
+
+# ============================================================
+# 1. File paths
+# ============================================================
+
+swissprot_reviewed_fasta <-
+  "uniprotkb_Equus_Caballus_AND_reviewed_t_2026_07_08.fasta"
+
+equine_atlas_file <-
+  "20230103_161147_20230102_E290127_Lib_validation_Report.tsv"
+
+baseline_u1u3_file <-
+  "Horse_urine_U1&U3_horse_fasta_020625_report.pg_matrix.tsv"
+
+baseline_u2_file <-
+  "Horse_urine_U2_donkey_fasta_160525_report.pg_matrix.tsv"
+
+comparison_file <-
+  "Filtered_final.tsv"
+
+out_dir <- "Venn_SwissProt_Atlas_Study"
+
+dir.create(
+  out_dir,
+  recursive = TRUE,
+  showWarnings = FALSE
+)
+
+# ============================================================
+# 2. Helper functions
+# ============================================================
+
+check_file_exists <- function(file) {
+  if (!file.exists(file)) {
+    stop(
+      paste(
+        "File not found:",
+        file
+      )
+    )
+  }
+}
+
+read_fasta_headers <- function(file) {
+  
+  check_file_exists(file)
+  
+  if (str_detect(file, "\\.gz$")) {
+    
+    con <- gzfile(
+      file,
+      open = "rt"
+    )
+    
+    on.exit(close(con))
+    
+    headers <- readLines(
+      con,
+      warn = FALSE
+    )
+    
+  } else {
+    
+    headers <- readLines(
+      file,
+      warn = FALSE
+    )
+  }
+  
+  headers[str_starts(headers, ">")]
+}
+
+extract_uniprot_accessions_from_fasta <- function(file) {
+  
+  headers <- read_fasta_headers(file)
+  
+  accessions <- str_match(
+    headers,
+    "^>[^|]*\\|([^|]+)\\|"
+  )[, 2]
+  
+  if (all(is.na(accessions))) {
+    
+    accessions <- str_match(
+      headers,
+      "^>([^ ]+)"
+    )[, 2]
+  }
+  
+  accessions %>%
+    as.character() %>%
+    str_trim() %>%
+    na.omit() %>%
+    unique()
+}
+
+split_accessions <- function(x) {
+  
+  x %>%
+    as.character() %>%
+    str_split(";") %>%
+    unlist() %>%
+    str_trim() %>%
+    .[!is.na(.) & . != ""] %>%
+    unique()
+}
+
+clean_accessions <- function(x) {
+  
+  x %>%
+    as.character() %>%
+    str_remove("^sp\\|") %>%
+    str_remove("^tr\\|") %>%
+    str_replace("\\|.*$", "") %>%
+    str_replace("-\\d+$", "") %>%
+    str_trim() %>%
+    .[!is.na(.) & . != ""] %>%
+    unique()
+}
+
+find_protein_column <- function(df) {
+  
+  possible_cols <- c(
+    "PG.ProteinGroups",
+    "PG.ProteinAccessions",
+    "Protein.Group",
+    "Protein.Ids",
+    "Protein IDs",
+    "Accession",
+    "Protein"
+  )
+  
+  found_col <- possible_cols[
+    possible_cols %in% names(df)
+  ]
+  
+  if (length(found_col) == 0) {
+    
+    cat("\nAvailable columns:\n")
+    print(names(df))
+    
+    stop(
+      "No recognised protein accession column was found."
+    )
+  }
+  
+  found_col[1]
+}
+
+find_peptide_column <- function(df) {
+  
+  possible_cols <- c(
+    "N.Proteotypic.Sequences",
+    "PG.NrOfStrippedSequencesIdentified",
+    "PG.NrOfPeptides",
+    "PG.NrOfPrecursors",
+    "Peptides",
+    "Unique.Peptides"
+  )
+  
+  found_col <- possible_cols[
+    possible_cols %in% names(df)
+  ]
+  
+  if (length(found_col) == 0) {
+    return(NA_character_)
+  }
+  
+  found_col[1]
+}
+
+find_baseline_intensity_columns <- function(df) {
+  
+  cols <- names(df)[
+    str_detect(
+      names(df),
+      "\\.wiff$"
+    )
+  ]
+  
+  cols <- cols[
+    str_detect(
+      cols,
+      regex(
+        "U1|U2|U3",
+        ignore_case = TRUE
+      )
+    ) &
+      !str_detect(
+        cols,
+        regex(
+          "pooled",
+          ignore_case = TRUE
+        )
+      )
+  ]
+  
+  cols
+}
+
+make_circle <- function(
+    x0,
+    y0,
+    radius,
+    n = 500
+) {
+  
+  theta <- seq(
+    0,
+    2 * pi,
+    length.out = n
+  )
+  
+  tibble(
+    x = x0 + radius * cos(theta),
+    y = y0 + radius * sin(theta)
+  )
+}
+
+# ============================================================
+# 3. Reviewed Swiss-Prot horse proteins
+# ============================================================
+
+swissprot_reviewed_accessions <-
+  extract_uniprot_accessions_from_fasta(
+    swissprot_reviewed_fasta
+  ) %>%
+  clean_accessions()
+
+cat(
+  "Reviewed Swiss-Prot horse proteins:",
+  length(swissprot_reviewed_accessions),
+  "\n"
+)
+
+# ============================================================
+# 4. Equine Protein Atlas proteins
+# ============================================================
+
+check_file_exists(
+  equine_atlas_file
+)
+
+atlas <- read_tsv(
+  equine_atlas_file,
+  show_col_types = FALSE
+)
+
+atlas_protein_col <- find_protein_column(
+  atlas
+)
+
+cat(
+  "Protein column used for Equine Protein Atlas:",
+  atlas_protein_col,
+  "\n"
+)
+
+atlas_filtered <- atlas
+
+if ("EG.IsDecoy" %in% names(atlas_filtered)) {
+  
+  atlas_filtered <- atlas_filtered %>%
+    filter(
+      is.na(EG.IsDecoy) |
+        EG.IsDecoy == FALSE
+    )
+}
+
+if ("PG.Qvalue" %in% names(atlas_filtered)) {
+  
+  atlas_filtered <- atlas_filtered %>%
+    filter(
+      is.na(PG.Qvalue) |
+        PG.Qvalue <= 0.01
+    )
+}
+
+atlas_accessions <- atlas_filtered %>%
+  pull(
+    all_of(atlas_protein_col)
+  ) %>%
+  split_accessions() %>%
+  clean_accessions()
+
+cat(
+  "Equine Protein Atlas proteins:",
+  length(atlas_accessions),
+  "\n"
+)
+
+# ============================================================
+# 5. Baseline equine urine proteins
+# ============================================================
+
+check_file_exists(
+  baseline_u1u3_file
+)
+
+check_file_exists(
+  baseline_u2_file
+)
+
+baseline_u1u3 <- read_tsv(
+  baseline_u1u3_file,
+  show_col_types = FALSE
+)
+
+baseline_u2 <- read_tsv(
+  baseline_u2_file,
+  show_col_types = FALSE
+)
+
+baseline_all <- bind_rows(
+  baseline_u1u3,
+  baseline_u2
+)
+
+baseline_protein_col <- find_protein_column(
+  baseline_all
+)
+
+baseline_peptide_col <- find_peptide_column(
+  baseline_all
+)
+
+baseline_intensity_cols <- find_baseline_intensity_columns(
+  baseline_all
+)
+
+cat(
+  "Protein column used for baseline files:",
+  baseline_protein_col,
+  "\n"
+)
+
+cat(
+  "Peptide column used for baseline files:",
+  baseline_peptide_col,
+  "\n"
+)
+
+cat(
+  "Baseline intensity columns used:\n"
+)
+
+print(
+  baseline_intensity_cols
+)
+
+if (length(baseline_intensity_cols) != 3) {
+  
+  warning(
+    paste(
+      "Expected 3 baseline intensity columns but detected",
+      length(baseline_intensity_cols)
+    )
+  )
+}
+
+baseline_filtered <- baseline_all %>%
+  mutate(
+    detected_n = rowSums(
+      !is.na(
+        across(
+          all_of(baseline_intensity_cols)
+        )
+      ) &
+        across(
+          all_of(baseline_intensity_cols)
+        ) > 0
+    )
+  ) %>%
+  filter(
+    detected_n >= 2
+  )
+
+if (!is.na(baseline_peptide_col)) {
+  
+  baseline_filtered <- baseline_filtered %>%
+    filter(
+      .data[[baseline_peptide_col]] >= 2
+    )
+}
+
+baseline_accessions <- baseline_filtered %>%
+  pull(
+    all_of(baseline_protein_col)
+  ) %>%
+  split_accessions() %>%
+  clean_accessions()
+
+cat(
+  "Baseline equine urine proteins:",
+  length(baseline_accessions),
+  "\n"
+)
+
+# ============================================================
+# 6. EGS-control comparative proteins
+# ============================================================
+
+check_file_exists(
+  comparison_file
+)
+
+comparison <- read_tsv(
+  comparison_file,
+  show_col_types = FALSE
+)
+
+comparison_protein_col <- find_protein_column(
+  comparison
+)
+
+cat(
+  "Protein column used for comparison file:",
+  comparison_protein_col,
+  "\n"
+)
+
+comparison_accessions <- comparison %>%
+  pull(
+    all_of(comparison_protein_col)
+  ) %>%
+  split_accessions() %>%
+  clean_accessions()
+
+cat(
+  "EGS-control comparison proteins:",
+  length(comparison_accessions),
+  "\n"
+)
+
+# ============================================================
+# 7. Combined equine urine proteome
+# ============================================================
+
+study_accessions <- unique(
+  c(
+    baseline_accessions,
+    comparison_accessions
+  )
+)
+
+cat(
+  "Total equine urine proteome proteins:",
+  length(study_accessions),
+  "\n"
+)
+
+# ============================================================
+# 8. Calculate inclusive overlaps
+# ============================================================
+
+all_three <- length(
+  Reduce(
+    intersect,
+    list(
+      swissprot_reviewed_accessions,
+      atlas_accessions,
+      study_accessions
+    )
+  )
+)
+
+swiss_atlas <- length(
+  intersect(
+    swissprot_reviewed_accessions,
+    atlas_accessions
+  )
+)
+
+swiss_urine <- length(
+  intersect(
+    swissprot_reviewed_accessions,
+    study_accessions
+  )
+)
+
+atlas_urine <- length(
+  intersect(
+    atlas_accessions,
+    study_accessions
+  )
+)
+
+# ============================================================
+# 9. Calculate exclusive Venn regions
+# ============================================================
+
+swiss_atlas_only <-
+  swiss_atlas - all_three
+
+swiss_urine_only <-
+  swiss_urine - all_three
+
+atlas_urine_only <-
+  atlas_urine - all_three
+
+swiss_only <- length(
+  setdiff(
+    swissprot_reviewed_accessions,
+    union(
+      atlas_accessions,
+      study_accessions
+    )
+  )
+)
+
+atlas_only <- length(
+  setdiff(
+    atlas_accessions,
+    union(
+      swissprot_reviewed_accessions,
+      study_accessions
+    )
+  )
+)
+
+urine_only <- length(
+  setdiff(
+    study_accessions,
+    union(
+      swissprot_reviewed_accessions,
+      atlas_accessions
+    )
+  )
+)
+
+cat(
+  "\n===== Supplementary Figure S5 Venn regions =====\n"
+)
+
+cat(
+  "Reviewed Swiss-Prot only:",
+  swiss_only,
+  "\n"
+)
+
+cat(
+  "Equine Protein Atlas only:",
+  atlas_only,
+  "\n"
+)
+
+cat(
+  "Equine Urine Proteome only:",
+  urine_only,
+  "\n"
+)
+
+cat(
+  "Reviewed Swiss-Prot and Equine Protein Atlas only:",
+  swiss_atlas_only,
+  "\n"
+)
+
+cat(
+  "Reviewed Swiss-Prot and equine urine proteome only:",
+  swiss_urine_only,
+  "\n"
+)
+
+cat(
+  "Equine Protein Atlas and Equine Urine Proteome only:",
+  atlas_urine_only,
+  "\n"
+)
+
+cat(
+  "Shared across all three:",
+  all_three,
+  "\n"
+)
+
+# ============================================================
+# 10. Create custom Venn circles
+# ============================================================
+
+circle_radius <- 2.40
+
+swiss_circle <- make_circle(
+  x0 = -1.35,
+  y0 = 0.85,
+  radius = circle_radius
+) %>%
+  mutate(
+    Set = "Reviewed Swiss-Prot"
+  )
+
+atlas_circle <- make_circle(
+  x0 = 1.35,
+  y0 = 0.85,
+  radius = circle_radius
+) %>%
+  mutate(
+    Set = "Equine Protein Atlas"
+  )
+
+urine_circle <- make_circle(
+  x0 = 0,
+  y0 = -1.15,
+  radius = circle_radius
+) %>%
+  mutate(
+    Set = "Equine Urine Proteome"
+  )
+
+circle_data <- bind_rows(
+  swiss_circle,
+  atlas_circle,
+  urine_circle
+)
+
+# ============================================================
+# Colour palette
+# Names must exactly match circle_data$Set
+# ============================================================
+
+venn_colours <- c(
+  "Reviewed Swiss-Prot" = "#f9c74f",
+  "Equine Protein Atlas" = "#277da1",
+  "Equine urine proteome" = "#90be6d"
+)
+
+# Check that the names match
+print(unique(circle_data$Set))
+print(names(venn_colours))
+
+# ============================================================
+# Count labels
+# ============================================================
+
+count_labels <- tibble(
+  label = c(
+    swiss_only,
+    atlas_only,
+    urine_only,
+    swiss_atlas_only,
+    swiss_urine_only,
+    atlas_urine_only,
+    all_three
+  ),
+  x = c(
+    -2.35,
+    2.35,
+    0.00,
+    0.00,
+    -1.10,
+    1.10,
+    0.00
+  ),
+  y = c(
+    1.15,
+    1.15,
+    -2.50,
+    1.55,
+    -0.80,
+    -0.80,
+    0.10
+  )
+)
+
+# ============================================================
+# Dataset labels
+# ============================================================
+
+set_labels <- tibble(
+  label = c(
+    "Reviewed Swiss-Prot",
+    "Equine Protein Atlas",
+    "Equine Urine Proteome"
+  ),
+  x = c(
+    -2.65,
+    2.65,
+    0.00
+  ),
+  y = c(
+    3.65,
+    3.65,
+    -4.05
+  )
+)
+
+# ============================================================
+# Plot
+# ============================================================
+
+venn_plot <- ggplot() +
+  
+  # Semi-transparent coloured circle fills
+  geom_polygon(
+    data = circle_data,
+    aes(
+      x = x,
+      y = y,
+      group = Set,
+      fill = Set
+    ),
+    colour = NA,
+    alpha = 0.50
+  ) +
+  
+  # Thin black outlines drawn on top
+  geom_path(
+    data = circle_data,
+    aes(
+      x = x,
+      y = y,
+      group = Set
+    ),
+    colour = "black",
+    linewidth = 0.60,
+    lineend = "round"
+  ) +
+  
+  # Venn-region counts
+  geom_text(
+    data = count_labels,
+    aes(
+      x = x,
+      y = y,
+      label = label
+    ),
+    size = 6.5,
+    fontface = "bold",
+    colour = "black"
+  ) +
+  
+  # Dataset names
+  geom_text(
+    data = set_labels,
+    aes(
+      x = x,
+      y = y,
+      label = label
+    ),
+    size = 5.5,
+    fontface = "bold",
+    colour = "black"
+  ) +
+  
+  scale_fill_manual(
+    values = venn_colours,
+    breaks = names(venn_colours)
+  ) +
+  
+  coord_fixed(
+    xlim = c(-4.6, 4.6),
+    ylim = c(-4.5, 4.1),
+    expand = FALSE
+  ) +
+  
+  theme_void() +
+  
+  theme(
+    legend.position = "none",
+    plot.background = element_rect(
+      fill = "white",
+      colour = NA
+    ),
+    panel.background = element_rect(
+      fill = "white",
+      colour = NA
+    ),
+    plot.margin = margin(20, 20, 20, 20)
+  )
+
+print(venn_plot)
+
+
+####### Save ######
+ggsave(
+  filename = file.path(
+    out_dir,
+    "Supplementary_Figure_S5_Venn.png"
+  ),
+  plot = venn_plot,
+  width = 8,
+  height = 8,
+  units = "in",
+  dpi = 600,
+  bg = "white"
+)
+
+ggsave(
+  filename = file.path(
+    out_dir,
+    "Supplementary_Figure_S5_Venn.pdf"
+  ),
+  plot = venn_plot,
+  width = 8,
+  height = 8,
+  units = "in",
+  bg = "white"
+)
+
+ggsave(
+  filename = file.path(
+    out_dir,
+    "Supplementary_Figure_S5_Venn.svg"
+  ),
+  plot = venn_plot,
+  width = 8,
+  height = 8,
+  units = "in",
+  bg = "white"
+)
