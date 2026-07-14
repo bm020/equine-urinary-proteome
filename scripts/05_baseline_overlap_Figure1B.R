@@ -1,200 +1,207 @@
 # ============================================================
-# Figure 1B: Overlap of proteins identified across baseline urine samples
+# Figure 1B: Baseline urinary proteome overlap by gene symbol
 # ============================================================
 #
-# Manuscript:
-# Defining the Equine Urinary Proteome: A Reference Baseline
-# for Biomarker Discovery
-#
 # Purpose:
-# This script generates protein lists for the baseline overlap
-# analysis of fresh equine urine samples U1, U2 and U3.
+#   Extract gene symbols detected in each baseline urine sample
+#   and export gene lists for Venny/overlap visualisation.
 #
-# Input files:
+# Inputs:
 #   - Horse_urine_U1&U3_horse_fasta_020625_report.pg_matrix.tsv
 #   - Horse_urine_U2_donkey_fasta_160525_report.pg_matrix.tsv
 #
-# Output files:
-#   - Figure_1B_U1_protein_groups.txt
-#   - Figure_1B_U2_protein_groups.txt
-#   - Figure_1B_U3_protein_groups.txt
-#   - Figure_1B_baseline_overlap_counts.csv
+# Outputs:
+#   - results/figure1_baseline_overlap/U1_genes.txt
+#   - results/figure1_baseline_overlap/U2_genes.txt
+#   - results/figure1_baseline_overlap/U3_genes.txt
+#   - results/figure1_baseline_overlap/baseline_overlap_summary.csv
 #
 # Notes:
-#   - Protein.Group is used as the primary identifier for overlap.
-#   - Intensity columns are selected by sample name rather than column order.
-#   - Pooled samples are excluded.
+#   U1 and U3 were analysed together in one Spectronaut/DIA-NN
+#   protein-group matrix, while U2 was analysed separately.
+#   Gene symbols are used for Figure 1B to support visualisation
+#   of shared and sample-specific baseline urinary proteins.
+#
 # ============================================================
-
-
-# ----------------------------
-# 0. Load packages
-# ----------------------------
 
 library(readr)
 library(dplyr)
 library(stringr)
 library(tibble)
 
+# ============================================================
+# 1. File paths
+# ============================================================
 
-# ----------------------------
-# 1. Read files
-# ----------------------------
+baseline_u1u3_file <- "data/Horse_urine_U1&U3_horse_fasta_020625_report.pg_matrix.tsv"
+baseline_u2_file   <- "data/Horse_urine_U2_donkey_fasta_160525_report.pg_matrix.tsv"
 
-u1u3_file <- "Horse_urine_U1&U3_horse_fasta_020625_report.pg_matrix.tsv"
-u2_file   <- "Horse_urine_U2_donkey_fasta_160525_report.pg_matrix.tsv"
+out_dir <- "results/figure1_baseline_overlap"
+dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
 
-stopifnot(file.exists(u1u3_file))
-stopifnot(file.exists(u2_file))
+# ============================================================
+# 2. Helper functions
+# ============================================================
 
-U1U3 <- read_tsv(u1u3_file, show_col_types = FALSE)
-U2   <- read_tsv(u2_file, show_col_types = FALSE)
-
-
-# ----------------------------
-# 2. Identify intensity columns robustly
-# ----------------------------
-
-u1u3_candidates <- grep("\\.wiff$", colnames(U1U3), value = TRUE)
-u2_candidates   <- grep("\\.wiff$", colnames(U2), value = TRUE)
-
-u1_col <- u1u3_candidates[
-  str_detect(u1u3_candidates, "U1_STRAP") &
-    !str_detect(u1u3_candidates, regex("Pooled", ignore_case = TRUE))
-]
-
-u3_col <- u1u3_candidates[
-  str_detect(u1u3_candidates, "U3_STRAP") &
-    !str_detect(u1u3_candidates, regex("Pooled", ignore_case = TRUE))
-]
-
-u2_col <- u2_candidates[
-  str_detect(u2_candidates, "U2_STRAP") &
-    !str_detect(u2_candidates, regex("Pooled", ignore_case = TRUE))
-]
-
-if (length(u1_col) != 1) stop("Could not uniquely identify the U1 intensity column.")
-if (length(u2_col) != 1) stop("Could not uniquely identify the U2 intensity column.")
-if (length(u3_col) != 1) stop("Could not uniquely identify the U3 intensity column.")
-
-cat("\nSelected intensity columns:\n")
-cat("U1:", u1_col, "\n")
-cat("U2:", u2_col, "\n")
-cat("U3:", u3_col, "\n")
-
-
-# ----------------------------
-# 3. Build sample-specific detected protein lists
-# ----------------------------
-
-get_detected_proteins <- function(df, intensity_col, sample_name) {
-  df %>%
-    select(
-      Protein_ID = Protein.Group,
-      Gene = Genes,
-      intensity = all_of(intensity_col)
-    ) %>%
-    mutate(
-      Sample = sample_name,
-      intensity = as.numeric(intensity),
-      detected = !is.na(intensity) & is.finite(intensity) & intensity > 0
-    ) %>%
-    filter(detected, !is.na(Protein_ID), Protein_ID != "") %>%
-    distinct(Sample, Protein_ID, .keep_all = TRUE)
+check_file_exists <- function(file) {
+  if (!file.exists(file)) {
+    stop(paste("File not found:", file))
+  }
 }
 
-U1_tbl <- get_detected_proteins(U1U3, u1_col, "U1")
-U2_tbl <- get_detected_proteins(U2,   u2_col, "U2")
-U3_tbl <- get_detected_proteins(U1U3, u3_col, "U3")
+find_intensity_column <- function(columns, sample_pattern) {
+  matched_col <- columns[str_detect(columns, sample_pattern)]
+  
+  if (length(matched_col) == 0) {
+    stop(paste("No intensity column found for pattern:", sample_pattern))
+  }
+  
+  if (length(matched_col) > 1) {
+    message("Multiple columns matched pattern: ", sample_pattern)
+    message("Using first matched column: ", matched_col[1])
+  }
+  
+  matched_col[1]
+}
 
-all_detected <- bind_rows(U1_tbl, U2_tbl, U3_tbl)
+extract_detected_genes <- function(df, intensity_col) {
+  
+  required_cols <- c("Protein.Group", "Genes", intensity_col)
+  missing_cols <- setdiff(required_cols, colnames(df))
+  
+  if (length(missing_cols) > 0) {
+    stop(
+      paste(
+        "Missing required column(s):",
+        paste(missing_cols, collapse = ", ")
+      )
+    )
+  }
+  
+  df %>%
+    transmute(
+      Protein.Group = Protein.Group,
+      Genes = Genes,
+      intensity = suppressWarnings(as.numeric(.data[[intensity_col]]))
+    ) %>%
+    filter(!is.na(intensity), intensity > 0) %>%
+    mutate(
+      Gene = as.character(Genes),
+      Gene = sub(";.*", "", Gene),
+      Gene = str_trim(Gene),
+      Gene = ifelse(Gene == "" | is.na(Gene), NA_character_, Gene)
+    ) %>%
+    filter(!is.na(Gene)) %>%
+    distinct(Gene) %>%
+    arrange(Gene) %>%
+    pull(Gene)
+}
 
+# ============================================================
+# 3. Read input files
+# ============================================================
 
-# ----------------------------
-# 4. Extract unique protein groups per sample
-# ----------------------------
+check_file_exists(baseline_u1u3_file)
+check_file_exists(baseline_u2_file)
 
-proteins_U1 <- all_detected %>%
-  filter(Sample == "U1") %>%
-  pull(Protein_ID) %>%
-  unique()
+baseline_u1u3 <- read_tsv(baseline_u1u3_file, show_col_types = FALSE)
+baseline_u2   <- read_tsv(baseline_u2_file, show_col_types = FALSE)
 
-proteins_U2 <- all_detected %>%
-  filter(Sample == "U2") %>%
-  pull(Protein_ID) %>%
-  unique()
+# ============================================================
+# 4. Identify sample intensity columns
+# ============================================================
 
-proteins_U3 <- all_detected %>%
-  filter(Sample == "U3") %>%
-  pull(Protein_ID) %>%
-  unique()
+u1u3_intensity_cols <- grep("\\.wiff$", colnames(baseline_u1u3), value = TRUE)
+u2_intensity_cols   <- grep("\\.wiff$", colnames(baseline_u2), value = TRUE)
 
+u1_col <- find_intensity_column(u1u3_intensity_cols, "U1_STRAP")
+u3_col <- find_intensity_column(u1u3_intensity_cols, "U3_STRAP")
+u2_col <- find_intensity_column(u2_intensity_cols, "U2_STRAP")
 
-# ----------------------------
-# 5. Calculate overlap counts
-# ----------------------------
+message("Intensity column used for U1: ", u1_col)
+message("Intensity column used for U2: ", u2_col)
+message("Intensity column used for U3: ", u3_col)
 
-overlap_counts <- tibble(
-  Category = c(
+# ============================================================
+# 5. Extract detected gene symbols per sample
+# ============================================================
+
+genes_u1 <- extract_detected_genes(baseline_u1u3, u1_col)
+genes_u2 <- extract_detected_genes(baseline_u2,   u2_col)
+genes_u3 <- extract_detected_genes(baseline_u1u3, u3_col)
+
+# ============================================================
+# 6. Calculate overlap statistics
+# ============================================================
+
+shared_all <- Reduce(intersect, list(genes_u1, genes_u2, genes_u3))
+union_all  <- unique(c(genes_u1, genes_u2, genes_u3))
+
+u1_only <- setdiff(genes_u1, union(genes_u2, genes_u3))
+u2_only <- setdiff(genes_u2, union(genes_u1, genes_u3))
+u3_only <- setdiff(genes_u3, union(genes_u1, genes_u2))
+
+u1_u2_only <- setdiff(intersect(genes_u1, genes_u2), genes_u3)
+u1_u3_only <- setdiff(intersect(genes_u1, genes_u3), genes_u2)
+u2_u3_only <- setdiff(intersect(genes_u2, genes_u3), genes_u1)
+
+overlap_summary <- tibble(
+  Region = c(
     "U1",
     "U2",
     "U3",
-    "U1_U2",
-    "U1_U3",
-    "U2_U3",
-    "U1_U2_U3"
+    "Union",
+    "Shared across U1, U2 and U3",
+    "U1 only",
+    "U2 only",
+    "U3 only",
+    "U1 and U2 only",
+    "U1 and U3 only",
+    "U2 and U3 only"
   ),
-  Count = c(
-    length(proteins_U1),
-    length(proteins_U2),
-    length(proteins_U3),
-    length(intersect(proteins_U1, proteins_U2)),
-    length(intersect(proteins_U1, proteins_U3)),
-    length(intersect(proteins_U2, proteins_U3)),
-    length(Reduce(intersect, list(proteins_U1, proteins_U2, proteins_U3)))
+  Gene_count = c(
+    length(genes_u1),
+    length(genes_u2),
+    length(genes_u3),
+    length(union_all),
+    length(shared_all),
+    length(u1_only),
+    length(u2_only),
+    length(u3_only),
+    length(u1_u2_only),
+    length(u1_u3_only),
+    length(u2_u3_only)
   )
 )
 
-print(overlap_counts)
+# ============================================================
+# 7. Print summary
+# ============================================================
 
+cat("\n===== Figure 1B baseline overlap summary =====\n")
+print(overlap_summary)
 
-# ----------------------------
-# 6. Save files for Venny or other Venn tools
-# ----------------------------
+# ============================================================
+# 8. Export gene lists for Venny
+# ============================================================
 
-writeLines(
-  sort(proteins_U1),
-  "Figure_1B_U1_protein_groups.txt"
-)
+writeLines(sort(unique(genes_u1)), file.path(out_dir, "U1_genes.txt"))
+writeLines(sort(unique(genes_u2)), file.path(out_dir, "U2_genes.txt"))
+writeLines(sort(unique(genes_u3)), file.path(out_dir, "U3_genes.txt"))
 
-writeLines(
-  sort(proteins_U2),
-  "Figure_1B_U2_protein_groups.txt"
-)
-
-writeLines(
-  sort(proteins_U3),
-  "Figure_1B_U3_protein_groups.txt"
-)
+writeLines(sort(unique(shared_all)), file.path(out_dir, "shared_U1_U2_U3_genes.txt"))
+writeLines(sort(unique(union_all)),  file.path(out_dir, "union_U1_U2_U3_genes.txt"))
 
 write_csv(
-  overlap_counts,
-  "Figure_1B_baseline_overlap_counts.csv"
+  overlap_summary,
+  file.path(out_dir, "baseline_overlap_summary.csv")
 )
 
+# ============================================================
+# 9. Session information
+# ============================================================
 
-# ----------------------------
-# 7. Print summary
-# ----------------------------
-
-cat("\nProtein groups detected:\n")
-cat("U1:", length(proteins_U1), "\n")
-cat("U2:", length(proteins_U2), "\n")
-cat("U3:", length(proteins_U3), "\n")
-cat("Shared across U1, U2 and U3:", length(Reduce(intersect, list(proteins_U1, proteins_U2, proteins_U3))), "\n")
-
-cat("\nSaved:\n")
-cat("- Figure_1B_U1_protein_groups.txt\n")
-cat("- Figure_1B_U2_protein_groups.txt\n")
-cat("- Figure_1B_U3_protein_groups.txt\n")
-cat("- Figure_1B_baseline_overlap_counts.csv\n")
+writeLines(
+  capture.output(sessionInfo()),
+  file.path(out_dir, "sessionInfo_Figure1B_baseline_overlap.txt")
+)
