@@ -1,29 +1,38 @@
 # ============================================================
-# Supplementary Figure S1: QC protein counts and PCA
+# Supplementary Figures S1 and S5
+# QC protein counts, PCA and equine proteome resource overlap
 # ============================================================
 #
 # Manuscript:
-# Defining the Equine Urinary Proteome: A Reference Baseline
-# for Biomarker Discovery
+# Defining the Equine Urinary Proteome:
+# A Reference Baseline for Biomarker Discovery
 #
 # Purpose:
-# This script generates quality-control figures summarising:
-#   1. Protein identifications per sample.
-#   2. Protein identifications by sample group.
-#   3. PCA of urine proteomics profiles across fresh, CTRL and EGS samples.
+#   Supplementary Figure S1:
+#     A. Protein identifications per sample.
+#     B. Protein identifications by sample group.
+#     C. PCA across fresh, CTRL and EGS urine samples.
+#
+#   Supplementary Figure S5:
+#     Overlap between reviewed Swiss-Prot horse proteins,
+#     the Equine Protein Atlas and the equine urine proteome.
 #
 # Input files:
 #   - Horse_urine_U1&U3_horse_fasta_020625_report.pg_matrix.tsv
 #   - Horse_urine_U2_donkey_fasta_160525_report.pg_matrix.tsv
 #   - Filtered_final.tsv
+#   - uniprotkb_Equus_Caballus_AND_reviewed_t_2026_07_08.fasta
+#   - 20230103_161147_20230102_E290127_Lib_validation_Report.tsv
 #
 # Notes:
-#   - Fresh urine samples: U1, U2 and U3.
-#   - Archived control samples: CTRL1-CTRL5.
-#   - Archived EGS samples: EGS1-EGS5.
-#   - EGS4 and EGS5 are included here only for QC visualisation.
-#     They were excluded from the final downstream comparative analysis
-#     due to low proteome coverage.
+#   - EGS4 and EGS5 are included only in QC visualisation.
+#   - They were excluded from downstream comparative analysis
+#     because of low proteome coverage.
+#   - The pooled baseline run is excluded.
+#   - Baseline proteins used in the resource-overlap analysis
+#     were detected in at least two of three baseline samples
+#     and supported by at least two proteotypic peptides.
+# ============================================================
 #
 # Package/method references:
 #   - readr::read_tsv for importing TSV files:
@@ -50,6 +59,7 @@ library(tibble)
 library(stringr)
 library(ggplot2)
 library(grid)
+library(tidyr)
 
 
 # ============================================================
@@ -813,14 +823,6 @@ cat("- Supplementary_Figure_S1C_QC_PCA_urine_protein_intensity.png/.svg/.pdf\n")
 # and the equine urine proteome
 # ============================================================
 #
-#
-library(readr)
-library(dplyr)
-library(tidyr)
-library(stringr)
-library(ggplot2)
-library(tibble)
-
 # ============================================================
 # 1. File paths
 # ============================================================
@@ -1630,3 +1632,13 @@ ggsave(
   units = "in",
   bg = "white"
 )
+# ============================================================
+# Final reproducibility output
+# ============================================================
+
+writeLines(
+  capture.output(sessionInfo()),
+  "sessionInfo_Supplementary_Figures_S1_and_S5.txt"
+)
+
+cat("\nSaved Supplementary Figures S1A-S1C and S5.\n")
